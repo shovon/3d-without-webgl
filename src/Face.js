@@ -98,11 +98,11 @@ Face.prototype.applyTransformation = function () {
  */
 Face.prototype.closest = function () {
   return this._closest;
-}
+};
 
 /*
  * Gets the value of the point that has the highest value for the z-coordinate.
  */
 Face.prototype.farthest = function () {
   return this._farthest;
-}
+};

@@ -10,8 +10,16 @@ var context;
 
 var faces;
 
+var bufferedSort = function (a, b) {
+  return b.farthest() - a.farthest();
+};
+
 /*
  * Gets the angle between two vectors in R^3.
+ *
+ * @param aVec3 represents the first vector
+ * @param bVec3 represents the second vector
+ * @returns a number that represents the angle between the two vectors
  */
 function getAngleVec3(aVec3, bVec3) {
   var dot = gl.vec3.dot(aVec3, bVec3);
@@ -22,6 +30,9 @@ function getAngleVec3(aVec3, bVec3) {
 
 /*
  * Converts a number to a 0-padded, hexadecimal string.
+ *
+ * @param num a number that is between 0 and 255.
+ * @returns a string that represents a hexadecimal number between 0 and 255
  */
 function numToHexString(num) {
   return num < 0x10 ? '0' + num.toString(16) : num.toString(16);
@@ -29,6 +40,9 @@ function numToHexString(num) {
 
 /*
  * Converts the tiny color format into a vector of degree 3.
+ *
+ * @param color an object from the tinycolor library, representing a colour
+ * @returns a vector in R^3
  */
 function vec3FromColor(color) {
   var rgb = color.toRgb();
@@ -40,6 +54,9 @@ function vec3FromColor(color) {
 
 /*
  * Converts a vector in R^3 into a hexadecimal-encoded colour.
+ *
+ * @param vec3 is a vector in R^3, representing a colour
+ * @returns a string
  */
 function vectorToHexColor(vec3) {
   // Extracts the red, green, and blue components.
@@ -70,9 +87,13 @@ function vectorToHexColor(vec3) {
 function drawPolygon(context, color, points) {
   context.fillStyle = color;
   context.beginPath();
-  context.moveTo(points[0][0] * 100 + WIDTH / 2, -points[0][1] * 100 + HEIGHT / 2);
+  context.moveTo(
+    points[0][0] * 100 + WIDTH / 2, -points[0][1] * 100 + HEIGHT / 2
+  );
   for (var i = 1; i < points.length; i++) {
-    context.lineTo(points[i][0] * 100 + WIDTH / 2, -points[i][1] * 100 + HEIGHT / 2);
+    context.lineTo(
+      points[i][0] * 100 + WIDTH / 2, -points[i][1] * 100 + HEIGHT / 2
+    );
   }
   context.closePath();
   context.fill();
@@ -83,7 +104,8 @@ function drawPolygon(context, color, points) {
  * coordinates.
  *
  * @param context the renderer to draw to
- * @param points the list of points.
+ * @param light the position of the light
+ * @param face the face to draw to the screen
  */
 function drawFace(context, light, face) {
   light = gl.vec3.clone(light);
@@ -92,6 +114,8 @@ function drawFace(context, light, face) {
   var newpoints = [];
   for (var i = 0; i < points.length; i++) {
     var point = points[i];
+
+    // Divides the x and y coordinates by the fourth component.
     point[0] /= point[3];
     point[1] /= point[3];
     newpoints.push(point);
@@ -110,10 +134,9 @@ function drawFace(context, light, face) {
   drawPolygon(context, vectorToHexColor(vec3FromColor(color)), newpoints);
 }
 
-function bufferedSort(a, b) {
-  return b.farthest() - a.farthest();
-}
-
+/*
+ * Initializes the scene.
+ */
 function init() {
   // Create a new Canvas element.
   canvas = document.createElement('canvas');
@@ -199,18 +222,23 @@ function init() {
   }
 }
 
+/*
+ * Runs the animations.
+ */
 function animate() {
   requestAnimationFrame(animate);
 
+  // Clears the canvas.
   context.clearRect(0, 0, WIDTH, HEIGHT);
   context.fillStyle = 'black';
   context.fillRect(0, 0, WIDTH, HEIGHT);
 
+  // Our perspective matrix.
   var pMatrix = gl.mat4.create();
-
   gl.mat4.perspective(pMatrix, 45*Math.PI/180, canvas.width / canvas.height, 0.1, 100);
   gl.mat4.mul(pMatrix, pMatrix, gl.mat4.lookAt(gl.mat4.create(), [0, 2, -3], [0, 0, 0], [0, 1, 0]));
 
+  // Our rotation matrix.
   var rotMatrix = gl.mat4.create();
 
   gl.mat4.rotate(rotMatrix, rotMatrix, Date.now() / 1000, [0, 1, 0]);
@@ -228,7 +256,7 @@ function animate() {
 
   buffered.sort(bufferedSort);
 
-  var light = gl.vec3.clone([1, 1, 0])
+  var light = gl.vec3.clone([0, 0, 1])
 
   for (var i = 0; i < buffered.length; i++) {
     drawFace(context, light, buffered[i]);
