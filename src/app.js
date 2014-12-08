@@ -213,7 +213,7 @@ function sphereCoordinate(x, y, max) {
 }
 
 function createSphere() {
-  var max = 30;
+  var max = 20;
 
   var faces = [];
 
