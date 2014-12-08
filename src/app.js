@@ -1,6 +1,5 @@
 var gl = require('gl-matrix');
 var Face = require('./Face.js');
-var tinycolor = require('tinycolor2');
 
 var WIDTH = 500;
 var HEIGHT = 500;
@@ -10,9 +9,83 @@ var context;
 
 var faces;
 
-var bufferedSort = function (a, b) {
-  return b.farthest() - a.farthest();
-};
+// Used in the z-buffer, for sorting planes by their farthest vector.
+var bufferedSort = function (a, b) { return b.farthest() - a.farthest(); };
+
+/*
+ * Converts an RGB value into HSL. H will be in radians, while S and L will be
+ * a scale between 0 and 1.
+ *
+ * @param vec3 a vector in R^3 representing a colour in RGB space. All its
+ *   values are assumed to be clamped between 0 and 1
+ * @returns a vector in R^3 representing a color in HSL space
+ */
+function rgbToHsl(vec3) {
+  var r = vec3[0];
+  var b = vec3[1];
+  var g = vec3[2];
+
+  var max = Math.max(r, g, b), min = Math.min(r, g, b);
+  var h, s, l = (max + min) / 2;
+
+  if(max == min) {
+    h = s = 0; // achromatic
+  } else {
+    var d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch(max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2              ; break;
+      case b: h = (r - g) / d + 4              ; break;
+    }
+
+    h %= 6;
+    h = h*Math.PI / 6;
+  }
+
+  return gl.vec3.clone([h, s, l]);
+}
+
+
+/*
+ * Converts an HSL color value into RGB color. R, G, and B will be a scale
+ * between 0 and 1.
+ *
+ * @param vec3 a vector in R^3 representing a color in HSL space. H is assumed
+ *   to be in radians, where as S and L are assumed to be between 0 and 1
+ * @returns a vector in R^3 representing a color
+ */
+var hslToRgb = (function () {
+  return function (vec3) {
+    var r, g, b;
+
+    h = vec3[0]/Math.PI;
+    s = vec3[1];
+    l = vec3[2];
+
+    if(s === 0) {
+      r = g = b = l; // achromatic
+    } else {
+      var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      var p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+
+    return gl.vec3.clone([r, g, b]);
+  };
+
+  function hue2rgb(p, q, t) {
+    if(t < 0) t += 1;
+    if(t > 1) t -= 1;
+    if(t < 1/6) return p + (q - p) * 6 * t;
+    if(t < 1/2) return q;
+    if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  }
+}());
+
 
 /*
  * Gets the angle between two vectors in R^3.
@@ -22,10 +95,8 @@ var bufferedSort = function (a, b) {
  * @returns a number that represents the angle between the two vectors
  */
 function getAngleVec3(aVec3, bVec3) {
-  var dot = gl.vec3.dot(aVec3, bVec3);
-  var lenA = gl.vec3.length(aVec3);
-  var lenB = gl.vec3.length(bVec3);
-  return Math.acos( dot / (lenA * lenB) );
+  var cross = gl.vec3.length(gl.vec3.cross(aVec3, bVec3));
+  return Math.atan2( cross, gl.vec3.dot(aVec3, bVec3) );
 }
 
 /*
@@ -53,7 +124,8 @@ function vec3FromColor(color) {
 }
 
 /*
- * Converts a vector in R^3 into a hexadecimal-encoded colour.
+ * Converts a vector in R^3 into a hexadecimal-encoded colour. Used for giving
+ * a plane color.
  *
  * @param vec3 is a vector in R^3, representing a colour
  * @returns a string
@@ -105,11 +177,15 @@ function drawPolygon(context, color, points) {
  *
  * @param context the renderer to draw to
  * @param light the position of the light
+ * @param strength the light's strength
+ * @param angle the light's width in radians
+ * @param ambient a floating-point numbr that represents ambient lighting.
  * @param face the face to draw to the screen
  */
-function drawFace(context, light, face) {
-  light = gl.vec3.clone(light);
-  gl.vec3.scale(light, light, -1);
+function drawFace(context, light, strength, angle, ambient, face) {
+  angle = angle > Math.PI ? Math.PI : angle < 0 ? 0 : angle; angle /= Math.PI;
+  light = gl.vec3.normalize(gl.vec3.clone(light), light);
+  // gl.vec3.scale(light, light, -1);
   var points = face.vertices4;
   var newpoints = [];
   for (var i = 0; i < points.length; i++) {
@@ -120,18 +196,53 @@ function drawFace(context, light, face) {
     point[1] /= point[3];
     newpoints.push(point);
   }
-  // Get the angle between 0 and Math.PI / 2.
-  var angle = getAngleVec3(light, face.normal4) / (Math.PI/2);
-  if (angle < 0 || angle > Math.PI) { angle = 0; }
-  var coefficient = angle / (Math.PI / 2);
-  var color = tinycolor.fromRatio({
-    r: face.color[0],
-    g: face.color[1],
-    b: face.color[2]
-  });
-  var lightenAmount = Math.log(coefficient*coefficient*coefficient);
-  color.lighten(lightenAmount*10);
-  drawPolygon(context, vectorToHexColor(vec3FromColor(color)), newpoints);
+
+  var coefficient = Math.max((gl.vec3.dot(light, face.normal4) - 1 + angle)/angle, 0);
+  var color = gl.vec3.clone(face.color);
+  color[2] = color[2] * coefficient * strength + ambient;
+  var colorrgb = hslToRgb(color);
+  drawPolygon(context, vectorToHexColor(colorrgb), newpoints);
+}
+
+function sphereCoordinate(x, y, max) {
+  return gl.vec3.clone([
+    Math.sin((y/max) * Math.PI)*Math.cos((x/max) * Math.PI*2),
+    Math.cos((y/max) * Math.PI),
+    Math.sin((y/max) * Math.PI)*Math.sin((x/max) * Math.PI*2)
+  ]);
+}
+
+function createSphere() {
+  var max = 30;
+
+  var faces = [];
+
+  for (var i = 0; i < max; i++) {
+    for (var j = 0; j < max; j++) {
+      var tl = sphereCoordinate(i    , j + 1, max);
+      var tr = sphereCoordinate(i + 1, j + 1, max);
+      var br = sphereCoordinate(i + 1, j    , max);
+      var bl = sphereCoordinate(i    , j    , max);
+
+      var normal = gl.vec3.create();
+      gl.vec3.add(normal, normal, tl);
+      gl.vec3.add(normal, normal, tr);
+      gl.vec3.add(normal, normal, br);
+      gl.vec3.add(normal, normal, bl);
+      gl.vec3.scale(normal, normal, 0.25);
+      gl.vec3.normalize(normal, normal);
+
+      faces.push(
+        new Face(
+          rgbToHsl([1, 0, 0]),
+          [ tl, tr, br, bl ],
+          normal
+        )
+      )
+    }
+  }
+
+  return faces;
 }
 
 /*
@@ -203,23 +314,24 @@ function init() {
   ];
 
   // Initialize our faces.
-  faces = [];
-  for (var i = 0; i < _points.length; i += 3 * 4) {
-    var face = [];
-    for (var j = 0; j < 4; j++) {
-      var _point = gl.vec3.create();
-      _point[0] = _points[i + j*3    ];
-      _point[1] = _points[i + j*3 + 1];
-      _point[2] = _points[i + j*3 + 2];
-      face.push(_point);
-    }
-    var nindex = i/(3*4);
-    var normal = gl.vec3.create();
-    normal[0] = normals[nindex*3];
-    normal[1] = normals[nindex*3 + 1];
-    normal[2] = normals[nindex*3 + 2];
-    faces.push(new Face(colors[(i/(3*4)) % colors.length], face, normal));
-  }
+  // faces = [];
+  // for (var i = 0; i < _points.length; i += 3 * 4) {
+  //   var face = [];
+  //   for (var j = 0; j < 4; j++) {
+  //     var _point = gl.vec3.create();
+  //     _point[0] = _points[i + j*3    ];
+  //     _point[1] = _points[i + j*3 + 1];
+  //     _point[2] = _points[i + j*3 + 2];
+  //     face.push(_point);
+  //   }
+  //   var nindex = i/(3*4);
+  //   var normal = gl.vec3.create();
+  //   normal[0] = normals[nindex*3];
+  //   normal[1] = normals[nindex*3 + 1];
+  //   normal[2] = normals[nindex*3 + 2];
+  //   faces.push(new Face(rgbToHsl(colors[(i/(3*4)) % colors.length]), face, normal));
+  // }
+  faces = createSphere();
 }
 
 /*
@@ -235,14 +347,26 @@ function animate() {
 
   // Our perspective matrix.
   var pMatrix = gl.mat4.create();
-  gl.mat4.perspective(pMatrix, 45*Math.PI/180, canvas.width / canvas.height, 0.1, 100);
-  gl.mat4.mul(pMatrix, pMatrix, gl.mat4.lookAt(gl.mat4.create(), [0, 2, -3], [0, 0, 0], [0, 1, 0]));
+  gl.mat4.perspective(
+    pMatrix, 45*Math.PI/180, canvas.width / canvas.height, 0.1, 1
+  );
+  gl.mat4.mul(
+    pMatrix,
+    pMatrix,
+    gl.mat4.lookAt(
+      gl.mat4.create(),
+      [0, 0, -3],
+      [0, 0, 0],
+      [0, 1, 0]
+    )
+  );
 
   // Our rotation matrix.
   var rotMatrix = gl.mat4.create();
 
   gl.mat4.rotate(rotMatrix, rotMatrix, Date.now() / 1000, [0, 1, 0]);
-  gl.mat4.rotate(rotMatrix, rotMatrix, Date.now() / 1000, [1, 0, 0]);
+  gl.mat4.rotate(rotMatrix, rotMatrix, Date.now() / 2000, [1, 0, 0]);
+  gl.mat4.rotate(rotMatrix, rotMatrix, Date.now() / 3000, [0, 0, 1]);
 
   var buffered = [];
 
@@ -256,10 +380,10 @@ function animate() {
 
   buffered.sort(bufferedSort);
 
-  var light = gl.vec3.clone([0, 0, 1])
+  var light = gl.vec3.clone([1, 0, -2])
 
   for (var i = 0; i < buffered.length; i++) {
-    drawFace(context, light, buffered[i]);
+    drawFace(context, light, 1.5, Math.PI/2, 0, buffered[i]);
   }
 }
 

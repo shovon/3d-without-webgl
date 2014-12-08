@@ -24,7 +24,7 @@ function transformVector(transform, vec3) {
  * Represents a single face.
  *
  * @constructor
- * @param color a string that represents the face's colour, in HTML format
+ * @param a vector in R^3 that represents the color in HSL space
  * @param points a string that represents the points that comprise the face
  */
 module.exports = Face;
@@ -71,6 +71,7 @@ Face.prototype.applyTransformation = function () {
 
   // Simply change the rotation on the normal. No translation or anything.
   this.normal4 = transformVector(transform, this.normal);
+  var point = [0, 0, -1];
 
   // Now, get the matrix that will apply the transformation on the matrices.
   gl.mat4.mul(transform, this.perspectiveMatrix, transform);
