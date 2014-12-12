@@ -1,4 +1,113 @@
 var gl = require('gl-matrix');
+var Object3D = require('./Object3D');
+var util = require('util');
+var helpers = require('./helpers');
+
+/*
+ * Converts a number to a 0-padded, hexadecimal string.
+ *
+ * @param num a number that is between 0 and 255.
+ * @returns a string that represents a hexadecimal number between 0 and 255
+ */
+function numToHexString(num) {
+  return num < 0x10 ? '0' + num.toString(16) : num.toString(16);
+}
+
+/*
+ * Converts the tiny color format into a vector of degree 3.
+ *
+ * @param color an object from the tinycolor library, representing a colour
+ * @returns a vector in R^3
+ */
+function vec3FromColor(color) {
+  var rgb = color.toRgb();
+  var rgbClone = gl.vec3.clone([rgb.r, rgb.g, rgb.b]);
+  return gl.vec3.scale(
+    gl.vec3.create(), rgbClone, 1/255
+  );
+}
+
+/*
+ * Converts a vector in R^3 into a hexadecimal-encoded colour. Used for giving
+ * a plane color.
+ *
+ * @param vec3 is a vector in R^3, representing a colour
+ * @returns a string
+ */
+function vectorToHexColor(vec3) {
+  // Extracts the red, green, and blue components.
+  var r = Math.floor(vec3[0]*255);
+  var g = Math.floor(vec3[1]*255);
+  var b = Math.floor(vec3[2]*255);
+
+  // Clamps the components between 0 to 255
+  r = r > 255 ? 255 : r < 0 ? 0 : r;
+  g = g > 255 ? 255 : g < 0 ? 0 : g;
+  b = b > 255 ? 255 : b < 0 ? 0 : b;
+
+  // Converts the components into a 0-padded, hexadecimal string.
+  var rstr = numToHexString(r);
+  var gstr = numToHexString(g);
+  var bstr = numToHexString(b);
+  
+  return '#' + rstr + gstr + bstr;
+}
+
+/*
+ * Tells the renderer (`context`) to draw a coloured polygon.
+ *
+ * @param context the renderer
+ * @param color the color of our polygon
+ * @param points the vertices of our polygon
+ */
+function drawPolygon(renderer, color, points) {
+  var context = renderer.context;
+  context.fillStyle = color;
+  context.beginPath();
+  context.moveTo(
+    points[0][0] * 100 + renderer.domElement.width / 2, -points[0][1] * 100 + renderer.domElement.height / 2
+  );
+  for (var i = 1; i < points.length; i++) {
+    context.lineTo(
+      points[i][0] * 100 + renderer.domElement.width / 2, -points[i][1] * 100 + renderer.domElement.height / 2
+    );
+  }
+  context.closePath();
+  context.fill();
+}
+
+/*
+ * Draws a face. Uses the `Face` classe's `points4` property to grab the
+ * coordinates.
+ *
+ * @param context the renderer to draw to
+ * @param light the position of the light
+ * @param strength the light's strength
+ * @param angle the light's width in radians
+ * @param ambient a floating-point numbr that represents ambient lighting.
+ * @param face the face to draw to the screen
+ */
+function drawFace(renderer, light, strength, angle, ambient, face) {
+  angle = angle > Math.PI ? Math.PI : angle < 0 ? 0 : angle; angle /= Math.PI;
+  light = gl.vec3.normalize(gl.vec3.clone(light), light);
+  // gl.vec3.scale(light, light, -1);
+  var points = face.vertices4;
+  var newpoints = [];
+  for (var i = 0; i < points.length; i++) {
+    var point = points[i];
+
+    // Divides the x and y coordinates by the fourth component.
+    point[0] /= point[3];
+    point[1] /= point[3];
+    newpoints.push(point);
+  }
+
+  var coefficient = Math.max((gl.vec3.dot(light, face.normal4) - 1 + angle)/angle, 0);
+  var color = gl.vec3.clone(face.color);
+  color[2] = color[2] * coefficient * strength + ambient;
+  var colorrgb = helpers.hslToRgb(color);
+  drawPolygon(renderer, vectorToHexColor(colorrgb), newpoints);
+}
 
 /*
  * Returns a vector in R^4, with the "transformation" applied to the homogenous
@@ -19,6 +128,7 @@ function transformVector(transform, vec3) {
 
   return point4;
 }
+
 
 /*
  * Represents a single face.
@@ -60,6 +170,8 @@ function Face(color, vertices, normal) {
   // This is our perspective camera. Set it to the identity matrix for now.
   this.perspectiveMatrix = gl.mat4.create();
 }
+
+util.inherits(Face, Object3D);
 
 /*
  * Applies the transformation based on the product of the perspective matrix
@@ -106,4 +218,12 @@ Face.prototype.closest = function () {
  */
 Face.prototype.farthest = function () {
   return this._farthest;
+};
+
+Face.prototype.getDistance = function () {
+  return this.farthest();
+};
+
+Face.prototype.draw = function (renderer, light) {
+  drawFace(renderer, light, 1.2, Math.PI/2, 0.09, this);
 };

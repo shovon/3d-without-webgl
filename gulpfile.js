@@ -1,12 +1,11 @@
 var gulp = require('gulp');
-var gutil = require('gulp-util');
-var source = require('vinyl-source-stream');
-var watchify = require('watchify');
 var browserify = require('browserify');
+var del = require('del');
+var source = require('vinyl-source-stream');
 var webserver = require('gulp-webserver');
-
-var SRC = './';
-var APPJS = './src/app.js';
+var path = require('path');
+var runsequence = require('gulp-run-sequence');
+var gutil = require('gulp-util');
 
 /*
  * Handles an error event.
@@ -16,29 +15,63 @@ function swallowError(error) {
   this.emit('end');
 }
 
-gulp.task('server', function () {
-  return gulp.src(SRC)
+/*
+ * Clears out all the stuff that have been generated during development.
+ */
+gulp.task('clean', function(done) {
+  del(['./bundle.js'], done);
+});
+
+/*
+ * Bundles the scripts, using Browserify.
+ */
+gulp.task('js', function() {
+  return browserify('./src/app.js')
+    .bundle()
+    .on('error', function (err) {
+      gutil.log(err);
+      this.emit('end');
+    })
+    .pipe(source('bundle.js'))
+    .on('error', swallowError)
+    .pipe(gulp.dest('./'));
+});
+
+/*
+ * Compiles the global styles, local styles, and the JavaSript/JSX code, and
+ * puts the compiled code into the `build` folder. Injects the necessary
+ * dpeendencies into the HTML.
+ */
+gulp.task('build', function (done) {
+  return runsequence(
+    'clean',
+    'js',
+    done
+  );
+});
+
+/*
+ * Watch for changes in files.
+ */
+gulp.task('watch', function() {
+  gulp.watch(['src/**/*.js'], ['js']);
+});
+
+/*
+ * Run the server.
+ */
+gulp.task('server', ['watch'], function () {
+  return gulp.src('./')
     .pipe(webserver({
       livereload: true,
       open: true
     }));
 });
 
-gulp.task('browserify', function () {
-  return browserify([APPJS])
-    .bundle()
-    .on('error', function (err) {
-      console.error(err.message);
-      // console.error(err);
-    })
-    .pipe(source('bundle.js'))
-    .on('error', swallowError)
-    .pipe(gulp.dest(SRC));
+/*
+ * The default is meant for development. Watches for changes, runs the builds,
+ * and fires up a web server. Also opens a new browser tab to the application.
+ */
+gulp.task('default', function () {
+  return runsequence('build', ['watch', 'server']);
 });
-gulp.task('build', ['browserify']);
- 
-gulp.task('watch', function() {
-  gulp.watch(['./src/*.js'], ['browserify']);
-});
-
-gulp.task('default', ['watch', 'server']);
