@@ -52,10 +52,18 @@ function createSphere() {
       faces.push(
         new Face(
           helpers.rgbToHsl([1, 0, 0]),
-          [ tl, tr, br, bl ],
+          [ tl, br, bl ],
           normal
         )
-      )
+      );
+
+      faces.push(
+        new Face(
+          helpers.rgbToHsl([1, 0, 0]),
+          [ tl, tr, br ],
+          normal
+        )
+      );
     }
   }
 

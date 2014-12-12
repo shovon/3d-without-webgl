@@ -129,6 +129,14 @@ function transformVector(transform, vec3) {
   return point4;
 }
 
+function vec3ToHomogeneous(vec3) {
+  var vec4 = gl.vec4.create();
+  vec4[0] = vec3[0];
+  vec4[1] = vec3[1];
+  vec4[2] = vec3[2];
+  vec4[3] = 1;
+  return vec4;
+}
 
 /*
  * Represents a single face.
@@ -137,11 +145,11 @@ function transformVector(transform, vec3) {
  * @param a vector in R^3 that represents the color in HSL space
  * @param points a string that represents the points that comprise the face
  */
-module.exports = Face;
-function Face(color, vertices, normal) {
+module.exports = PerVertexFace;
+function PerVertexFace(color, vertices, normals) {
   this.color = color;
   this.vertices = vertices;
-  this.normal = normal;
+  this.normals = normals;
 
   this._closest = Number.POSITIVE_INFINITY;
   this._farthest = Number.NEGATIVE_INFINITY;
@@ -158,11 +166,14 @@ function Face(color, vertices, normal) {
   }
 
   // Initializes a homogeneous coordinate for the normal.
-  this.normal4 = [];
-  this.normal4[0] = normal[0];
-  this.normal4[1] = normal[1];
-  this.normal4[2] = normal[2];
-  this.normal4[3] = 1;
+  this.normals4 = [];
+  // this.normals4[0] = normal[0];
+  // this.normals4[1] = normal[1];
+  // this.normals4[2] = normal[2];
+  // this.normals4[3] = 1;
+  for (var i = 0; i < normals.length; i++) {
+    this.normals4.push(vec3ToHomogeneous(normals[i]));
+  }
 
   // This is our rotation matrix. Set it to the id
   this.rotationMatrix = gl.mat4.create();
@@ -175,14 +186,17 @@ util.inherits(Face, Object3D);
 
 /*
  * Applies the transformation based on the product of the perspective matrix
- * and the transformation matrix.
+ * and the 
  */
-Face.prototype.applyTransformation = function () {
+PerVertexFace.prototype.applyTransformation = function () {
   // This is the transformation that should be applied to the vertices.
   var transform = gl.mat4.clone(this.rotationMatrix);
 
   // Simply change the rotation on the normal. No translation or anything.
-  this.normal4 = transformVector(transform, this.normal);
+  // this.normal4 = transformVector(transform, this.normal);
+  for (var i = 0; i < this.normals4.length; i++) {
+    this.normals4[i] = transformVector(transform, this.normals4[i]);
+  }
   var point = [0, 0, -1];
 
   // Now, get the matrix that will apply the transformation on the matrices.
@@ -209,21 +223,21 @@ Face.prototype.applyTransformation = function () {
 /*
  * Gets the value of the point that has the lowest value for the z-coordinate.
  */
-Face.prototype.closest = function () {
+PerVertexFace.prototype.closest = function () {
   return this._closest;
 };
 
 /*
  * Gets the value of the point that has the highest value for the z-coordinate.
  */
-Face.prototype.farthest = function () {
+PerVertexFace.prototype.farthest = function () {
   return this._farthest;
 };
 
-Face.prototype.getDistance = function () {
+PerVertexFace.prototype.getDistance = function () {
   return this.farthest();
 };
 
-Face.prototype.draw = function (renderer, light) {
+PerVertexFace.prototype.draw = function (renderer, light) {
   drawFace(renderer, light, 1.2, Math.PI/2, 0.09, this);
 };

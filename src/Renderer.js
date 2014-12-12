@@ -5,6 +5,7 @@ function Renderer(width, height) {
   this.domElement.height = height;
 
   this.context = this.domElement.getContext('2d');
+  this.context.imageSmoothingEnabled = false;
 }
 
 /*
