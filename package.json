@@ -1,0 +1,15 @@
+{
+  "devDependencies": {
+    "browserify": "^9.0.3",
+    "del": "^1.1.1",
+    "gulp": "^3.8.11",
+    "gulp-run-sequence": "^0.3.2",
+    "gulp-util": "^3.0.3",
+    "gulp-webserver": "^0.9.0",
+    "vinyl-source-stream": "^1.0.0",
+    "watchify": "^2.4.0"
+  },
+  "dependencies": {
+    "gl-matrix": "^2.1.0"
+  }
+}
